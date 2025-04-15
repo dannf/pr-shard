@@ -6,43 +6,52 @@ import subprocess
 import sys
 import tempfile
 
+
 def get_current_branch_name():
-    name = subprocess.check_output(
-        ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-    ).decode().rstrip()
-    
+    name = (
+        subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        )
+        .decode()
+        .rstrip()
+    )
+
     return name
 
+
 def ref_to_sha(ref):
-    sha = subprocess.check_output(
-        ['git', 'rev-parse', ref]
-    ).decode().rstrip()
+    sha = subprocess.check_output(["git", "rev-parse", ref]).decode().rstrip()
 
     return sha
 
+
 class Commit:
-    subject_re = re.compile(r'^(?P<pre>Subject: \[PATCH\] )(?P<post>.*)$')
+    subject_re = re.compile(r"^(?P<pre>Subject: \[PATCH\] )(?P<post>.*)$")
+
     def __init__(self, sha):
         self.sha = sha
         self._subject_prefix = None
 
     def changed_files(self):
-        changed_files = subprocess.check_output(
-            ['git', 'show', '--pretty=', '--name-only', self.sha],
-        ).decode().rstrip().splitlines()
+        changed_files = (
+            subprocess.check_output(
+                ["git", "show", "--pretty=", "--name-only", self.sha],
+            )
+            .decode()
+            .rstrip()
+            .splitlines()
+        )
         return changed_files
 
     def contents(self, path):
-        cmd = [
-            'git', 'format-patch', '-1', '--stdout', self.sha
-        ]
+        cmd = ["git", "format-patch", "-1", "--stdout", self.sha]
         if path:
-            cmd += ['--', path]
+            cmd += ["--", path]
         print(cmd)
         contents = subprocess.check_output(cmd).decode().splitlines()
         if not self.subject_prefix:
             return contents
-        for idx in range(0, len(contents)-1):
+        for idx in range(0, len(contents) - 1):
             print(contents[idx])
             m = self.subject_re.match(contents[idx])
             if not m:
@@ -57,10 +66,10 @@ class Commit:
     @subject_prefix.setter
     def subject_prefix(self, prefix):
         self._subject_prefix = prefix
-    
+
     def __repr__(self):
         return self.sha
-        
+
 
 class DevelBranch:
     def __init__(self, base, branch):
@@ -72,15 +81,24 @@ class DevelBranch:
         self.commits = self.commits()
 
     def changed_files(self):
-        changed_files = subprocess.check_output(
-            ['git', 'show', '--pretty=', '--name-only', self.changeset],
-        ).decode().rstrip().splitlines()
+        changed_files = (
+            subprocess.check_output(
+                ["git", "show", "--pretty=", "--name-only", self.changeset],
+            )
+            .decode()
+            .rstrip()
+            .splitlines()
+        )
         return sorted(list(set(changed_files)))
 
     def commits(self):
-        shas = subprocess.check_output(
-            ['git', 'log', '--reverse', '--pretty=%H', self.changeset],
-        ).decode().splitlines()
+        shas = (
+            subprocess.check_output(
+                ["git", "log", "--reverse", "--pretty=%H", self.changeset],
+            )
+            .decode()
+            .splitlines()
+        )
         commits = []
         for sha in shas:
             commits.append(Commit(sha))
@@ -93,12 +111,13 @@ class DevelBranch:
             shards.append(
                 Shard(
                     self,
-                    self.changed_files[size*shard_idx:size*(shard_idx+1)],
+                    self.changed_files[size * shard_idx : size * (shard_idx + 1)],
                     shard_idx,
                 )
             )
             shard_idx += 1
         return shards
+
 
 class Shard:
     def __init__(self, devbranch, paths, id):
@@ -109,7 +128,7 @@ class Shard:
 
     def add_commit(self, commit):
         for path in self.paths:
-            subj_path = path.removesuffix('.yaml')
+            subj_path = path.removesuffix(".yaml")
             commit.subject_prefix = f"{subj_path}: "
             if path not in commit.changed_files():
                 print(f"Skipping commit {commit} - it doesn't touch {path}\n")
@@ -119,72 +138,79 @@ class Shard:
                 # No files in this shard are in this commit
                 return
             with tempfile.NamedTemporaryFile(
-                    mode='w', delete_on_close=False, delete=False,
+                mode="w",
+                delete_on_close=False,
+                delete=False,
             ) as tmpf:
-                tmpf.write('\n'.join(c))
+                tmpf.write("\n".join(c))
                 tmpf.close()
             try:
-                subprocess.check_call(['git', 'am', tmpf.name])
+                subprocess.check_call(["git", "am", tmpf.name])
             except subprocess.CalledProcessError:
-                subprocess.check_call(['git', 'am', '--abort'])
+                subprocess.check_call(["git", "am", "--abort"])
                 raise Exception
-        
+
     def create_branch(self, branch_prefix):
         branch_orig = get_current_branch_name()
         name = f"{branch_prefix}{self.id}"
         subprocess.check_call(
-            ['git', 'checkout', '-b', name, self.devbranch.base_sha],
+            ["git", "checkout", "-b", name, self.devbranch.base_sha],
         )
         self.branches_created.append(name)
         try:
             for commit in self.devbranch.commits:
                 self.add_commit(commit)
         except:
-            subprocess.check_call(
-                ['git', 'checkout', branch_orig]
-            )
-            subprocess.check_call(
-                ['git', 'branch', '-D', name]
-            )
+            subprocess.check_call(["git", "checkout", branch_orig])
+            subprocess.check_call(["git", "branch", "-D", name])
             self.branches_created = []
             raise Exception
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     current_branch = get_current_branch_name()
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '-b', '--branch', default=current_branch,
+        "-b",
+        "--branch",
+        default=current_branch,
         help=f"(default: {current_branch})",
     )
-    parser.add_argument('--base', required=True)
+    parser.add_argument("--base", required=True)
     parser.add_argument(
-        '--branch-prefix', default=None,
-        help='The prefix to use when creating branch names for shards. '
+        "--branch-prefix",
+        default=None,
+        help="The prefix to use when creating branch names for shards. "
         'For example, branch prefix of "foo-" will result in shards with '
         'names "foo-1", "foo-2", and so on. '
-        f'(default: pr-shard/{current_branch}/)'
+        f"(default: pr-shard/{current_branch}/)",
     )
     parser.add_argument(
-        '-s', '--shard-size', type=int, default=1,
-        help='Number of files per shard',
+        "-s",
+        "--shard-size",
+        type=int,
+        default=1,
+        help="Number of files per shard",
     )
     parser.add_argument(
-        '-e', '--exec', nargs='*', action='extend',
+        "-e",
+        "--exec",
+        nargs="*",
+        action="extend",
         help='Command to run from each shard branch, e.g. "git push <remote>"',
     )
     args = parser.parse_args()
 
     branch_prefix = args.branch_prefix
     if branch_prefix is None:
-        branch_prefix = f'pr-shard/{args.branch}/'
+        branch_prefix = f"pr-shard/{args.branch}/"
 
     devbranch = DevelBranch(args.base, args.branch)
     shards = devbranch.shard(args.shard_size)
     for shard in shards:
         shard.create_branch(branch_prefix)
         if args.exec:
-                subprocess.check_call(args.exec)
-                
-    subprocess.check_call(['git', 'checkout', current_branch])
+            subprocess.check_call(args.exec)
+
+    subprocess.check_call(["git", "checkout", current_branch])
