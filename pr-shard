@@ -211,6 +211,6 @@ if __name__ == "__main__":
     for shard in shards:
         shard.create_branch(branch_prefix)
         if args.exec:
-            subprocess.check_call(args.exec)
+            subprocess.check_call(args.exec, shell=True)
 
     subprocess.check_call(["git", "checkout", current_branch])
